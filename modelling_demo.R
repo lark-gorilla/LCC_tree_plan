@@ -64,11 +64,13 @@ plot(wards['wd16nm'])
 hp<-filter(wards, wd16nm=='Hyde Park and Woodhouse')
 
 hp<-st_transform(hp, 27700) # trans to 
+# now for all wars
+wards<-st_transform(wards, 27700)
 
-#read greenspace and clip to inside hp ward
+#read greenspace and clip to inside all wards
 gs<-st_read('C:/trees/spatial_data/greenspace/greenspace_mosaic_ward.gml')
 st_crs(gs)<-27700 # missing crs so set
-gs<-st_intersection(gs, hp)
+#gs<-st_intersection(gs, hp) # keep as full wards size
 
 # remove certain forms and functions
 gs$primaryForm<-as.character(gs$primaryForm)
@@ -76,17 +78,20 @@ gs[is.na(gs$primaryForm),]$primaryForm<-'maybe grass'
 gs<-gs%>%filter(!primaryForm %in% c('Manmade Surface', 'Inland Water'))
 gs<-gs%>%filter(primaryFunction != 'Private Garden') # for moment we remove gardens
 
-plot(gs['primaryForm'])
+#plot(gs['primaryForm'])
 
 #make cost surface probably want to do cost * PU area
 table(gs$primaryFunction)
 gs$cost<-NA
-gs[gs$primaryFunction=='Amenity - Residential Or Business',]$cost<-3 # high cost for residential or business amenities
+gs[gs$primaryFunction %in% c('Amenity - Residential Or Business', 'Bowling Green',
+                             'Other Sports Facility'),]$cost<-3 # high cost for residential or business amenities
 gs[gs$primaryFunction %in% c('Amenity - Transport','Institutional Grounds',
                              'Play Space', 'Playing Field',
-                             'Religious Grounds', 'School Grounds'),]$cost<-2
+                             'Religious Grounds', 'School Grounds', 'Cemetery'),]$cost<-2
 # med cost, insitutions that may be interested or council owned or recreation
-gs[gs$primaryFunction %in% c('Public Park Or Garden','Land Use Changing'),]$cost<-1
+gs[gs$primaryFunction %in% c('Public Park Or Garden','Land Use Changing', 
+                             'Allotments Or Community Growing Spaces', 'Camping Or Caravan Park',
+                             'Golf Course','Natural'),]$cost<-1
 # low cost 
 gs[gs$primaryForm=='Woodland',]$cost<-0 # no cost for existing woods
 
@@ -95,6 +100,10 @@ plot(gs['cost'])
 
 # remove columns
 gs<-dplyr::select(gs, gml_id, primaryForm, primaryFunction, cost)
+
+#intersect with wards
+gs<-st_join(gs, wards['wd16nm'], largest=T)
+names(gs)[5]<-'ward'
 
 #read vectormap local area and clip to greenspace -
 # WILL NEED TO AMMEND for rural: merge (st_union?) datasets with gs top layer
@@ -122,56 +131,81 @@ gs2[gs2$primaryForm=='maybe grass',] # hmm
 imd<-st_read('C:/trees/spatial_data/IMD19/IMD_2019/IMD_2019.shp')
 st_crs(imd)<-27700 # detected CRS bit different but IS the same
 # clip to ward for this example
-imd<-imd[hp,]
-imd<-dplyr::select(imd, IMDScore)
+#imd<-imd[hp,]
+imd<-dplyr::select(imd, IMDDec0) # IMD deciles
+imd_mostD30<-filter(imd, IMDDec0<4)
+names(imd_mostD30)[1]<-'most30depr'
+imd_mostD30$most30depr<-1
+#imd_leastD30<-filter(imd, IMDDec0>8)
+#names(imd_leastD30)[1]<-'least30depr'
+imd_D30to60<-filter(imd, IMDDec0%in%c(4,5,6))
+names(imd_D30to60)[1]<-'med30to60depr'
+imd_D30to60$med30to60depr<-1
+
 #attribute gs layer
-gs<-st_join(gs, imd, largest=T)
+gs<-st_join(gs, imd_mostD30, largest=T)
+gs<-st_join(gs, imd_D30to60, largest=T)
+# each PU IND set to 1 or NA therefore tarets irrespective of area size
 
 # priority flood mitigation planting
 flood<-st_read('C:/trees/spatial_data/flood_mapping/PAF_CFMP456.shp')
+st_crs(flood)<-27700 # detected CRS bit different but IS the same
+#flood<-flood[hp,]
+flood$flood<-1
+flood<-dplyr::select(flood, flood)
+gs<-st_join(gs, flood, largest=T)
 
-# Make carbon potential layer
+
+ # Make carbon potential layer
 # area of PU * land quality 
 # then use forestry calc 
 gs$car_pot<-st_area(gs)
 
 # write gs layer
-write_sf(gs, 'C:/trees/modelling/demo/hyde_park_PU_attrib.shp')
+write_sf(gs, 'C:/trees/modelling/demo/leedswards_PU_attrib.shp')
 
 # prioritizR run
-hyde_p<-read_sf('C:/trees/modelling/demo/hyde_park_PU_attrib.shp')
+pu_ward<-read_sf('C:/trees/modelling/demo/leedswards_PU_attrib.shp')
 
 
-ggplot(hyde_p)+geom_sf(aes(fill=prmryFn))+theme_bw()
+ggplot(pu_ward)+geom_sf(aes(fill=prmryFn))+theme_bw()
 
-ggplot(hyde_p)+geom_sf(aes(fill=factor(cost)))+theme_bw()
+ggplot(pu_ward)+geom_sf(aes(fill=factor(cost)))+theme_bw()
 
-ggplot(hyde_p)+geom_sf(aes(fill=IMDScor))+theme_bw()
+ggplot(pu_ward)+geom_sf(aes(fill=mst30dp))+theme_bw()
 
-ggplot(hyde_p)+geom_sf(aes(fill=car_pot))+theme_bw()
+ggplot(pu_ward)+geom_sf(aes(fill=md30t60))+theme_bw()
 
-p1<-problem(as(hyde_p, 'Spatial'), features=c('car_pot', 'IMDScor'),
-            cost_column='cost')
+ggplot(pu_ward)+geom_sf(aes(fill=flood))+theme_bw()
+
+ggplot(pu_ward)+geom_sf(aes(fill=car_pot))+theme_bw()
+
+p1<-problem(as(pu_ward, 'Spatial'), features=c('car_pot', 'mst30dp', 
+             "md30t60", 'flood'),cost_column='cost')
 #targets for each layer
 
-sum(hyde_p$IMDScor) # 67249.68 # probably makes more sense to cut into bins then use area
+sum(pu_ward$mst30dp, na.rm=T) # 38906
+sum(pu_ward$md30t60, na.rm=T) # 18997
+sum(pu_ward$flood, na.rm=T) # 2430
 
-sum(hyde_p$car_pot) #max possible 990929.5 what m2 of tree cover do we want
-sum(hyde_p[hyde_p$cost==0,]$car_pot) # getting 86301.28 m2 for free from exisiting cover
-990929.5-86301.28 # ~900000 m2, 90 ha 
+sum(pu_ward$car_pot) #max possible 101597964 what m2 of tree cover do we want
+sum(pu_ward[pu_ward$cost==0,]$car_pot, na.rm=T) # getting 8458774 m2 for free from exisiting cover
+101597964-8458774 # ~93139190 m2,  
 # set target anwhere aboe 8.6 ha
 # 100000 = plant ~13.6 ha
-
-targets<-c(500000, 20000) # low ish IMD
+                  
+targets<-c(10000000, 10000,5000, 2000) 
 
 p2<-p1%>%add_min_set_objective() %>%   
-  add_absolute_targets(targets) %>% 
-  add_boundary_penalties(10, 1) # selects biggar blocks
+  add_absolute_targets(targets)
+#%>%  add_boundary_penalties(10, 1) # selects bigger blocks
 
 s1<-solve(p2)
 
-hyde_p$sol<-s1$solution_1
-plot(hyde_p['sol'])
+pu_ward$sol<-s1$solution_1
+plot(pu_ward['sol'])
+
+write_sf(pu_ward, 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp')
 
 ggplot(hyde_p)+geom_sf(aes(fill=factor(sol)))+theme_bw()
 
