@@ -98,6 +98,10 @@ gs<-dplyr::select(gs, gml_id, primaryForm, primaryFunction, cost)
 
 #read vectormap local area and clip to greenspace -
 # WILL NEED TO AMMEND for rural: merge (st_union?) datasets with gs top layer
+# for overall planning unit creation thinking something like:
+# greenspace-[top]->vectormap_polygons-[top]->polgonized(vectormap_lines)
+# NA values inside polygonized(vectormap_lines) filled via extract from raster underlayer 
+# and road layer
 vm<-st_read('C:/trees/spatial_data/vectormap_local/vectormap_area_mosaic_ward.gml')
 st_crs(vm)<-27700 # missing crs so set
 # remove urban extent and buildings
@@ -122,6 +126,9 @@ imd<-imd[hp,]
 imd<-dplyr::select(imd, IMDScore)
 #attribute gs layer
 gs<-st_join(gs, imd, largest=T)
+
+# priority flood mitigation planting
+flood<-st_read('C:/trees/spatial_data/flood_mapping/PAF_CFMP456.shp')
 
 # Make carbon potential layer
 # area of PU * land quality 
