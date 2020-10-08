@@ -155,6 +155,9 @@ flood$flood<-1
 flood<-dplyr::select(flood, flood)
 gs<-st_join(gs, flood, largest=T)
 
+#Join in SSSI data and attribute, then modify cost column
+# if SSSI=T & not woodland = cost=3
+
 
  # Make carbon potential layer
 # area of PU * land quality 
