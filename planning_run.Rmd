@@ -11,83 +11,101 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Load libraries and read in attributed planning units
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 library(dplyr)
 library(sf)
 library(prioritizr)
 library(ggplot2)
-#library(stargazer)
 
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
-
+names(pu_all)[names(pu_all)=='X2050__']<-'yield'
 ```
 
-Plot land cover types inside Planning Units, which form basis of cost layer. All land  Planning Unit landcover is theoretically available for planting and binned into 4 cost c lasses: existing tree cover = 0 (free); all others are 1,2 or 3 representing increasing difficulty/cost to plant on. 
+### Landcover -> Planning unit cost layer
+
+Our planning units (PUs) cover Leeds City Council wards and have all non-green spaces areas (e.g. buildings, infrastructure etc) removed. The planning units represent plantable areas of land, each with associated costs for conversion from current land use to tree planting.  
+
+Planning unit landcover is theoretically available for planting and binned into 4 cost classes: existing tree cover = 0 (free); all others are 1,2 or 3 representing increasing difficulty/cost to plant on. 
 ```{r, echo=FALSE}
 
 tab1<-pu_all%>%st_set_geometry(NULL)%>%group_by(prmryFn)%>%summarise(cost=first(cost))
 tab1%>%as.data.frame()
 #stargazer(tab1, type='text')
-plot(pu_all['prmryFn'],border=NA)
+
 #ggplot(pu_all)+geom_sf(aes(fill=prmryFn))+theme_bw()+ggtitle('Landcover')
 ```
 
-Plot cost layer and other planning layers
+# Plot landcover and cost layer using above table for conversion
 
 ```{r, echo=FALSE}
 #ggplot(pu_all)+geom_sf(aes(fill=factor(cost)))+theme_bw()+ggtitle('Cost')
-plot(pu_all['cost'],border=NA)
+plot(pu_all['prmryFn'],border=NA, main='Landcover')
+plot(pu_all['cost'],border=NA, main='Planning unit cost')
+```
 
-#ggplot(pu_all)+geom_sf(aes(fill=mst30dp))+theme_bw()+ggtitle('Highest 30% Deprivation')
-plot(pu_all['mst30dp'],border=NA)
-#ggplot(pu_all)+geom_sf(aes(fill=md30t60))+theme_bw()+ggtitle('Intermediate Deprivation')
-plot(pu_all['md30t60'],border=NA)
-#ggplot(pu_all)+geom_sf(aes(fill=flood))+theme_bw()+ggtitle('Priority flood planting')
-plot(pu_all['flood'],border=NA)
+#### Features to prioritize in the tree planting network
 
-plot(pu_all['car_pot'],border=NA)
+We want to create a tree planting network that minimses the cost of planting (above) while maximising the following features: 
+
+1) Carbon sequestration; dependent on a planning unit's area and the expected yield class of planted woodland; larger areas with higher modelled yield are expected to sequester more carbon.
+
+2) Planting in socially deprived areas; both intermediate and highly deprived areas will be prioritized.
+
+3) Planting in areas to mitigate flooding.
+
+```{r, echo=FALSE}
+plot(pu_all['car_pot'],border=NA, main='Available tree planting area - carbon sequestration 1')
 #ggplot(pu_all)+geom_sf(aes(fill=car_pot))+theme_bw()+ggtitle('Carbon potential')
+plot(pu_all['yield'],border=NA, main='Potential planting yield - carbon sequestration 2')
+#ggplot(pu_all)+geom_sf(aes(fill=mst30dp))+theme_bw()+ggtitle('Highest 30% Deprivation')
+plot(pu_all['mst30dp'],border=NA, main='High deprivation')
+#ggplot(pu_all)+geom_sf(aes(fill=md30t60))+theme_bw()+ggtitle('Intermediate Deprivation')
+plot(pu_all['md30t60'],border=NA, main='Intermediate deprivation')
+#ggplot(pu_all)+geom_sf(aes(fill=flood))+theme_bw()+ggtitle('Priority flood planting')
+plot(pu_all['flood'],border=NA, main='Priority flood planting')
 ```
 
-Initiate prioritizr problem and set up target parameters
+### Initiate prioritizr problem and set up target parameters
 
 ```{r}
-#convert area m2 to km2
-#pu_all$flood<-pu_all$flood/1000000
-#pu_all$car_pot<-pu_all$car_pot/1000000
-#pu_all$area<-NULL
+p1<-problem(as(pu_all, 'Spatial'), features=c('car_pot', 'yield','mst30dp', "md30t60", 'flood'),cost_column='cost')
+```
+There is 365115467 m2 (~365 km2) area available for tree planting 
 
-p1<-problem(as(pu_all, 'Spatial'), features=c('car_pot', 'mst30dp', 
-             "md30t60", 'flood'),cost_column='cost')
-```
-We can have a max target of 39444 Planning Units that have high deprivation
-```{r}
-sum(pu_all$mst30dp, na.rm=T)
-```
-We can have a max target of 20635 Planning Units that have intermediate deprivation
-```{r}
-sum(pu_all$md30t60, na.rm=T)
-```
-We can have a max target of 51218396 m2 (~51 km2) area of priority flood planting
-```{r}
-sum(pu_all$flood, na.rm=T)
-```
-There is 365115467 m2 (~365 km2) area available for tree planting (maximum carbon potential)
 ```{r}
 sum(pu_all$car_pot)
 ```
-But 49490374 m2 (~49 km2) is already covered by trees, so the remaining area we could plant is 315625093 m2 (~315 km2). Any cabon potential target needs to be above 49 km2 otherwise we're not planting new trees
+But 49490374 m2 (~49 km2) is already covered by trees, so the remaining area we could plant is 315625093 m2 (~315 km2). Any target area of planting needs to be above 49 km2, otherwise we're not planting new trees.
 ```{r}
 sum(pu_all$car_pot)
 sum(pu_all$car_pot)-sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T)
 ```
-
-OK so set prelimary targets to double current tree cover (basically 100km2), include 50% of high deprivation planning units and 50% of intermediate deprivation planning units, and include half of avilable priority tree planting?
+The total yield covering all 88031 planning units is 758839, set the target to the number of planning units.
 ```{r}
-targets<-c(100000000, 19722,10317, 25609198) 
+sum(pu_all$yield)
+nrow(pu_all)
+```
+We can have a max target of 39444 Planning Units that have high deprivation.
+```{r}
+sum(pu_all$mst30dp, na.rm=T)
+```
+We can have a max target of 20635 Planning Units that have intermediate deprivation.
+```{r}
+sum(pu_all$md30t60, na.rm=T)
+```
+We can have a max target of 51218396 m2 (~51 km2) area of priority flood planting.
+```{r}
+sum(pu_all$flood, na.rm=T)
 ```
 
-Run prioritizr
+
+OK so set prelimary targets to double current tree cover (basically 100km2) in the highest yielding areas, include 50% of high deprivation planning units, 50% of intermediate deprivation planning units, 50% of priority flood mitigation areas.
+```{r}
+targets<-c(100000000, 88031, 19722,10317, 25609198)
+```
+
+### Run prioritizr
+
 ```{r}
 p2<-p1%>%add_min_set_objective() %>%   
   add_absolute_targets(targets)
@@ -100,8 +118,50 @@ s1<-solve(p2) # calls Gurobi
 plot solution
 
 ```{r}
-pu_all$sol<-s1$solution_1
+pu_all$initial.run<-s1$solution_1
 
 #ggplot(pu_all)+geom_sf(aes(fill=factor(sol)))+theme_bw()+ggtitle('Planning solution 1')
-plot(pu_all['sol'], border=NA)
+plot(pu_all['initial.run'], border=NA, pal=c('lavender','black'),main='Initial planning solution (black in network)')
+```
+
+### adjust feature target parameters and observe solution change 
+
+Tree planting area target remains constant (100km2)
+Yield class either: 88031 (initial), 176062(double) or 379419 (50% max val)
+High deprivation either: 9861 (25%), 19722 (50% inital) or 29583 (75%)
+Intermediate deprivation either: 5158 (25%), 10317 (50% inital) or 15476 (75%)
+Piority flood mitigation either: 12804599 (25%), 25609198 (50% inital) or 38413797 (75%)
+
+## Note: solutions do differ in the total number of planning units used to meet their targets, but all targets are met in each solution
+
+```{r, echo=F, message=FALSE, warning=FALSE, include=F}
+
+targets2<-rbind(data.frame(car_pot=100000000, yield=c(88031, 176062 ,379419), mst30dp=19722, md30t60=10317, flood= 25609198, name='Yield', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=100000000, yield=88031, mst30dp=c(9861, 19722, 29583), md30t60=10317, flood= 25609198, name='High Depr', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=100000000, yield=88031, mst30dp=19722, md30t60=c(5158, 10317, 15476), flood= 25609198, name='Intermediate Depr', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=100000000, yield=88031, mst30dp=19722, md30t60=10317, flood= c(12804599, 25609198, 38413797), name='Flood mitigaton', lev=c('low', 'med', 'high')))
+ 
+for (i in 1:nrow(targets2)){
+  p3<-p1%>%add_min_set_objective() %>%   
+  add_absolute_targets(as.integer(paste(targets2[i,1:5])))
+  s2<-solve(p3) 
+ pu_all$tempsol<-s2$solution_1
+ names(pu_all)[names(pu_all)=='tempsol']<-paste0('run.with.',targets2[i,7],'.',targets2[i,6])
+ print(i)}             
+```
+```{r, echo=F}
+plot(pu_all[10], border=NA, pal=c('lavender','black'))
+plot(pu_all[11], border=NA, pal=c('lavender','black'))
+plot(pu_all[12], border=NA, pal=c('lavender','black'))
+plot(pu_all[13], border=NA, pal=c('lavender','black'))
+plot(pu_all[13], border=NA, pal=c('lavender','black'))
+plot(pu_all[14], border=NA, pal=c('lavender','black'))
+plot(pu_all[15], border=NA, pal=c('lavender','black'))
+plot(pu_all[16], border=NA, pal=c('lavender','black'))
+plot(pu_all[17], border=NA, pal=c('lavender','black'))
+plot(pu_all[18], border=NA, pal=c('lavender','black'))
+plot(pu_all[19], border=NA, pal=c('lavender','black'))
+plot(pu_all[20], border=NA, pal=c('lavender','black'))
+plot(pu_all[21], border=NA, pal=c('lavender','black'))
+plot(pu_all[22], border=NA, pal=c('lavender','black'))
 ```

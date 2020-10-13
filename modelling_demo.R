@@ -150,11 +150,11 @@ gs[gs$car_pot>1e+6,]$flood<-800000
 gs[gs$car_pot>1e+6,]$car_pot<-800000
 gs$area<-NULL
 # write gs layer
-write_sf(gs, 'C:/trees/modelling/demo/final_PU_attrib.shp')
+write_sf(gs, 'C:/trees/modelling/demo/final_PU_attrib.shp', delete_dsn=T)
 
 # prioritizR run
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
-
+names(pu_all)[names(pu_all)=='X2050__']<-'yield'
 
 ggplot(pu_all)+geom_sf(aes(fill=prmryFn))+theme_bw()
 
@@ -169,23 +169,25 @@ ggplot(pu_all)+geom_sf(aes(fill=flood))+theme_bw()
 ggplot(pu_all)+geom_sf(aes(fill=car_pot))+theme_bw()
 
 p1<-problem(as(pu_all, 'Spatial'), features=c('car_pot', 'mst30dp', 
-             "md30t60", 'flood'),cost_column='cost')
+             "md30t60", 'flood','yield' ),cost_column='cost')
 #targets for each layer
 
-sum(pu_all$mst30dp, na.rm=T) # 38906
-sum(pu_all$md30t60, na.rm=T) # 18997
-sum(pu_all$flood, na.rm=T) # 2430
+sum(pu_all$mst30dp, na.rm=T) # 39444
+sum(pu_all$md30t60, na.rm=T) # 20635
+sum(pu_all$flood, na.rm=T) # 1611050
+sum(pu_all$yield, na.rm=T) #  758839
 
-sum(pu_all$car_pot) #max possible 101597964 what m2 of tree cover do we want
-sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T) # getting 8458774 m2 for free from exisiting cover
-101597964-8458774 # ~93139190 m2,  
-# set target anwhere aboe 8.6 ha
-# 100000 = plant ~13.6 ha
-                  
-targets<-c(10000000, 10000,5000, 2000) 
+sum(pu_all$car_pot) #max possible 362609999 what m2 of tree cover do we want
+sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T) # getting 49490374 m2 for free from exisiting cover
+# double current cov 49490374*2=  98980748 ~= 100km2
+# all others half, apart from yield: set to no of PUs: 88031
+
+ 
+targets<-c(100000000, 19722,10317, 379419, 88031) 
 
 p2<-p1%>%add_min_set_objective() %>%   
   add_absolute_targets(targets)
+#%>%add_neighbor_constraints - might not work as PUs already fragmented
 #%>%  add_boundary_penalties(10, 1) # selects bigger blocks
 
 s1<-solve(p2)
