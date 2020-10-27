@@ -152,9 +152,25 @@ gs$area<-NULL
 # write gs layer
 write_sf(gs, 'C:/trees/modelling/demo/final_PU_attrib.shp', delete_dsn=T)
 
+# reproject to wgs for leaflet
+pu_all<-st_read('C:/trees/modelling/demo/final_PU_attrib.shp')
+library(rgdal)
+library(gdalUtils)
+
+ogr2ogr(
+  src_datasource_name=
+    
+    src_datasource_name
+    
+    -s_srs "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs +nadgrids=d:\ostn02_ntv2.gsb" -t_srs EPSG:4326 d:\data\test\coords\mm_shape\Topo_Line_wgs84_ostn02.shp d:\data\test\coords\mm_shape\Topo_Line.shp
+
+
 # prioritizR run
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
 names(pu_all)[names(pu_all)=='X2050__']<-'yield'
+#neighbourhood constraint matrix (within 10m and not crossed by main road)
+pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')# read manually edited file
+cm<-connected_matrix(as(pubuff_road, 'Spatial'))
 
 ggplot(pu_all)+geom_sf(aes(fill=prmryFn))+theme_bw()
 
@@ -186,8 +202,9 @@ sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T) # getting 49490374 m2 for free fro
 targets<-c(100000000, 19722,10317, 379419, 88031) 
 
 p2<-p1%>%add_min_set_objective() %>%   
-  add_absolute_targets(targets)
-#%>%add_neighbor_constraints - might not work as PUs already fragmented
+  add_absolute_targets(targets)%>%
+  add_neighbor_constraints(k=1, data=cm) %>%
+  add_locked_in_constraints(locked_in=pu_all$cost==0) 
 #%>%  add_boundary_penalties(10, 1) # selects bigger blocks
 
 s1<-solve(p2)
