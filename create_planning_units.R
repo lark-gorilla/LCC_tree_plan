@@ -95,6 +95,38 @@ for(i in 1:length(va_files))
 
 st_write(va_lyr, 'C:/trees/spatial_data/vectormap_local/vectormap_line_mosaic_ward.gml')
 
+# mosiac major raods
+
+va_files<-list.files('C:/trees/spatial_data/vectormap_local/Download_1492830/vml_3498503/se/')[
+  grep('gml',list.files('C:/trees/spatial_data/vectormap_local/Download_1492830/vml_3498503/se/'))]
+
+va_lyr<-NULL
+for(i in 1:length(va_files))
+{
+  #if(i==41){next}
+  g1<-st_read(paste0('C:/trees/spatial_data/vectormap_local/Download_1492830/vml_3498503/se/',
+                     va_files[i]), layer='RoadCline', quiet=T)
+  g1%>%dplyr::select(gml_id, featureDescription)->g1
+  
+  # filter out unwanted lines
+  g1<-g1%>%filter(featureDescription %in% c('A Road, Alignment', 'A Road, Primary, Alignment',
+                  'Minor Road, Alignment', 'B Road, Alignment', 'Motorway, Alignment'))
+  
+  inty<-st_intersects(g1, ward_boundary_t)
+  
+  if(1%in%lengths(inty)==FALSE){print(paste(i, 'didnt intersect'));next}
+  
+  if(0%in%lengths(inty)==FALSE){g2<-g1; print(paste(i, 'was all inside'))}else{
+    g2<-st_intersection(g1, ward_boundary_t); print(paste(i, 'intersected'))}
+  
+  if(is.null(va_lyr)){va_lyr<-g2}else{
+    va_lyr<-rbind(va_lyr, g2)}
+  print(i)
+}
+
+st_write(va_lyr, 'C:/trees/spatial_data/vectormap_local/vectormap_majorRoads_mosaic_ward.gml')
+
+
 # clip out area of greenspace coverage inside vectormap_local mosaics
 
 gs<-st_read('C:/trees/spatial_data/greenspace/greenspace_mosaic_ward.gml')
@@ -178,18 +210,26 @@ allPU<-rbind(select(gs, primaryFunction, primaryForm),
 
 st_write(allPU,'C:/trees/modelling/full/greenspace_vectormap_crops_PU.shp')
 
+#### Create neighbourhood matrix for PUs
+# PUs within 10m of each other and not bisected by a major road are 
+# said to be neighbours
 
-# create 20 square metre fishnet within ward boundary
-#https://rpubs.com/dieghernan/beautifulmaps_I
-
-# intersect with rural lines 
-
-# remove area under 
-
-# calc area of each poly
-#st_area
-# subset out polys larger than 20 square metres
-
-# apply fishnet to larger polys
-
-# merge fishnet divided polys back into 
+# use attrib data as already removed some PUs
+allPU<-st_read('C:/trees/modelling/demo/final_PU_attrib.shp')
+pubuff<-st_buffer(allPU, dist=10) # 10 m buff
+roadz<-st_read('C:/trees/spatial_data/vectormap_local/vectormap_majorRoads_mosaic_ward.gml')
+st_crs(roadz)<-st_crs(pubuff)
+pubuff_road<-st_difference(pubuff, st_union(st_buffer(roadz, 3)))# buffer roads by 3 m
+write_sf(pubuff_road, 'C:/trees/modelling/demo/PU_10mbuff_roads.shp', delete_dsn=T)
+pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')
+#inty<-st_intersects(pubuff_road, sparse=F)
+cm<-connected_matrix(as(pubuff_road, 'Spatial'))
+#bm<-boundary_matrix(as(pubuff_road, 'Spatial'), TRUE)
+# run with this cm reveals 661 Forested PUs that are not connected (road or > 10m)
+pubuff_road$NOconn_tree<-0
+# get the unconnected tree areas from matrix
+c1<-cm[which(pu_all$cost==0),]
+pubuff_road[which(pu_all$cost==0)[which(rowSums(c1)==0)],]$NOconn_tree<-1
+pubuff_road1<-pubuff_road%>%st_buffer(dist=pubuff_road$NOconn_tree*35)
+write_sf(pubuff_road1, 'C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp', delete_dsn=T)
+# edit manually those tree PUs that need greater thah 35km buffer to intersect
