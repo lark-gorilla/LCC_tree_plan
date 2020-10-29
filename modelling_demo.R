@@ -156,14 +156,12 @@ write_sf(gs, 'C:/trees/modelling/demo/final_PU_attrib.shp', delete_dsn=T)
 pu_all<-st_read('C:/trees/modelling/demo/final_PU_attrib.shp')
 library(rgdal)
 library(gdalUtils)
+src_datasource_name <- 'C:/trees/modelling/demo/final_PU_attrib.shp'
+dst_datasource_name <- 'C:/trees/modelling/demo/final_PU_attrib_wgs.shp'
 
-ogr2ogr(
-  src_datasource_name=
-    
-    src_datasource_name
-    
-    -s_srs "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs +nadgrids=d:\ostn02_ntv2.gsb" -t_srs EPSG:4326 d:\data\test\coords\mm_shape\Topo_Line_wgs84_ostn02.shp d:\data\test\coords\mm_shape\Topo_Line.shp
-
+ogr2ogr(src_datasource_name,dst_datasource_name,
+        s_srs="+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs +nadgrids=C:/trees/spatial_data_downloads/OSTN02_NTv2.gsb",
+        t_srs="EPSG:4326",verbose=TRUE)
 
 # prioritizR run
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
@@ -171,59 +169,38 @@ names(pu_all)[names(pu_all)=='X2050__']<-'yield'
 #neighbourhood constraint matrix (within 10m and not crossed by main road)
 pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')# read manually edited file
 cm<-connected_matrix(as(pubuff_road, 'Spatial'))
+pu_all$cost2<-pu_all$car_pot*pu_all$cost
 
-ggplot(pu_all)+geom_sf(aes(fill=prmryFn))+theme_bw()
-
-ggplot(pu_all)+geom_sf(aes(fill=factor(cost)))+theme_bw()
-
-ggplot(pu_all)+geom_sf(aes(fill=mst30dp))+theme_bw()
-
-ggplot(pu_all)+geom_sf(aes(fill=md30t60))+theme_bw()
-
-ggplot(pu_all)+geom_sf(aes(fill=flood))+theme_bw()
-
-ggplot(pu_all)+geom_sf(aes(fill=car_pot))+theme_bw()
-
-p1<-problem(as(pu_all, 'Spatial'), features=c('car_pot', 'mst30dp', 
-             "md30t60", 'flood','yield' ),cost_column='cost')
+p1<-problem(as(pu_all, 'Spatial'), 
+            features=c('car_pot', 'yield','mst30dp', "md30t60", 'flood'),
+            cost_column='cost2')
 #targets for each layer
 
-sum(pu_all$mst30dp, na.rm=T) # 39444
-sum(pu_all$md30t60, na.rm=T) # 20635
-sum(pu_all$flood, na.rm=T) # 1611050
-sum(pu_all$yield, na.rm=T) #  758839
 
-sum(pu_all$car_pot) #max possible 362609999 what m2 of tree cover do we want
-sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T) # getting 49490374 m2 for free from exisiting cover
-# double current cov 49490374*2=  98980748 ~= 100km2
-# all others half, apart from yield: set to no of PUs: 88031
-
- 
-targets<-c(100000000, 19722,10317, 379419, 88031) 
+targets<-c(100000000, 88031, 19722,10317, 25609198)
 
 p2<-p1%>%add_min_set_objective() %>%   
   add_absolute_targets(targets)%>%
   add_neighbor_constraints(k=1, data=cm) %>%
-  add_locked_in_constraints(locked_in=pu_all$cost==0) 
-#%>%  add_boundary_penalties(10, 1) # selects bigger blocks
+  add_locked_in_constraints(locked_in=pu_all$cost==0)
+presolve_check(p2)
 
-s1<-solve(p2)
+s1<-solve(p2) 
 
 pu_all$sol<-s1$solution_1
-plot(pu_all['sol'])
+
 
 write_sf(pu_all, 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp')
 
-ggplot(hyde_p)+geom_sf(aes(fill=factor(sol)))+theme_bw()
+# convert to wgs for leaflet
+library(rgdal)
+library(gdalUtils)
+src_datasource_name <- 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp'
+dst_datasource_name <- 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1_wgs.shp'
+
+ogr2ogr(src_datasource_name,dst_datasource_name,
+        s_srs="+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs +nadgrids=C:/trees/spatial_data_downloads/OSTN02_NTv2.gsb",
+        t_srs="EPSG:4326",verbose=TRUE)
 
 
-  #add_locked_in_constraints('locked_in') could lock in existing trees rather than cost=0
-# less flexible?
-#  add_locked_out_constraints('locked_out') removed all buildings/manmade prior to run
-
-s1<-solve(p2)
-plot(s1)
-
-plot(s1, col = c("grey90", "darkgreen"), main = "Solution",
-     xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1))
 
