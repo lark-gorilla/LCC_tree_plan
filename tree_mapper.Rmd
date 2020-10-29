@@ -1,0 +1,65 @@
+---
+title: "LCC tree network mapper"
+author: "Mark Miller"
+date: "29 October 2020"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=F, message=F, fig.width=10, fig.height=8}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(sf)
+library(raster)
+library(leaflet)
+library(fasterize)
+pu_wgs<-read_sf('C:/trees/modelling/demo/leedswards_PU_attrib_solution1_wgs.shp')
+ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m acc
+r_cost<-fasterize(pu_wgs, ras_templ, field='cost2')
+pu_wgs$Fn_code<-as.numeric(as.factor(pu_wgs$prmryFn))
+r_lcov<-fasterize(pu_wgs, ras_templ, field='Fn_code')
+r_dep30<-fasterize(pu_wgs, ras_templ, field='mst30dp')
+r_dep6030<-fasterize(pu_wgs, ras_templ, field='md30t60')
+r_flood<-fasterize(pu_wgs, ras_templ, field='flood')
+r_carea<-fasterize(pu_wgs, ras_templ, field='car_pot')
+r_cyiel<-fasterize(pu_wgs, ras_templ, field='yield')
+pu_wgs[pu_wgs$sol==0,]$sol<-NA # rm non sol PUs
+pu_wgs[pu_wgs$cost2==0,]$sol<-2 # identify existing trees
+r_sol<-fasterize(pu_wgs, ras_templ, field='sol')
+
+
+#color palettes
+pal_lcov<-colorFactor(rainbow(40),values(r_lcov), na.color='transparent')
+lcov_lookup<-pu_wgs%>%as.data.frame()%>%group_by(Fn_code)%>%summarise(lcov=first(prmryFn))
+pal_cost<-colorBin("RdYlBu", values(r_cost), bins=10, na.color='transparent')
+pal_flood<-colorBin("RdYlBu", values(r_flood), bins=10, na.color='transparent')
+pal_carea<-colorBin("RdYlBu", values(r_carea), bins=10, na.color='transparent')
+pal_cyiel<-colorBin("RdYlBu", values(r_cyiel), bins=10, na.color='transparent')
+
+ m <- leaflet() %>%
+  addTiles() %>% 
+   addRasterImage(r_lcov, colors=pal_lcov, opacity = 0.9, group='lcov')%>%
+  addRasterImage(r_cost, colors=pal_cost, opacity = 0.9, group='cost')%>%
+   addRasterImage(r_sol, opacity = 0.9, group='solution', color=c('blue', 'green'))%>%
+    addRasterImage(r_dep30, opacity = 0.9, group='high_depr', color='red')%>%
+   addRasterImage(r_dep6030, opacity = 0.9, group='med_depr', color='orange')%>%
+   addRasterImage(r_flood, colors=pal_flood, opacity = 0.9, group='flood')%>%
+   addRasterImage(r_carea, colors=pal_carea, opacity = 0.9, group='carbon_area')%>%
+   addRasterImage(r_cyiel, colors=pal_cyiel, opacity = 0.9, group='carbon_yield')%>%
+   
+
+   addLegend(pal = pal_lcov, values = values(r_lcov),title = "Land Cover",
+             labFormat  = labelFormat(transform = function(x) {
+              lcov_lookup[lcov_lookup$Fn_code==x,]$lcov}),group = "lcov", position = "bottomleft")%>%
+   addLegend(pal = pal_cost, values = values(r_cost), title= 'PU cost', group = "cost", position = "bottomleft")%>%
+   addLegend(values=c(1,2), colors=c('blue', 'green'), title='Planting network', labels=c('new planting', 'existing trees'), group = "solution", position = "bottomleft")%>%
+   addLegend(values=1, colors='red', title='Most deprived 30%', labels='1', group = "high_depr", position = "bottomleft")%>%
+      addLegend(values=1, colors='orange', title='Intermediate deprivation', labels='1', group = "med_depr", position = "bottomleft")%>%
+    addLegend(pal = pal_carea, values = values(r_carea), title= 'Area available for planting', group = "carbon_area", position = "bottomleft")%>%
+       addLegend(pal = pal_cyiel, values = values(r_cyiel), title= 'Planting yield', group = "carbon_yield", position = "bottomleft")%>%
+       addLegend(pal = pal_flood, values = values(r_flood), title= 'Priority flood planting', group = "flood", position = "bottomleft")%>%
+   
+   addLayersControl(overlayGroups = c('lcov', "cost",'high_depr', 'med_depr', 'flood', 'carbon_area', 'carbon_yield', "solution"),
+                   options = layersControlOptions(collapsed = FALSE))
+ m%>%hideGroup(c('lcov', "cost",'high_depr', 'med_depr', 'flood', 'carbon_area', 'carbon_yield', "solution"))
+
+```
