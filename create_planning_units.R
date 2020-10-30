@@ -210,6 +210,47 @@ allPU<-rbind(select(gs, primaryFunction, primaryForm),
 
 st_write(allPU,'C:/trees/modelling/full/greenspace_vectormap_crops_PU.shp')
 
+## Section to update 'Open semi-natural' landcover in greenspace for PUs that are actually woodland
+allPU<-read_sf('C:/trees/modelling/full/greenspace_vectormap_crops_PU.shp')
+st_crs(allPU)<-27700 
+vm_pol<-st_read('C:/trees/spatial_data/vectormap_local/vectormap_area_mosaic_ward.gml')
+st_crs(vm_pol)<-27700 
+
+PU_opensemi<-allPU%>%filter(prmryFr=='Open Semi-Natural')
+PU_else<-allPU%>%filter(prmryFr!='Open Semi-Natural' | is.na(prmryFr))
+vm_forest<-vm_pol%>%filter(featureDescription%in%c('Broad-leafed Woodland','Coniferous Woodland',
+             'Mixed Woodland', 'Orchard','Broad-leafed Woodland And Shrub',
+             'Coniferous Woodland And Shrub', 'Mixed Woodland And Shrub'))
+#inty1<-st_intersects(PU_opensemi, vm_forest)
+#PU_opensemi[which(lengths(inty1) > 0),]
+# spatial join
+PU_opensemi2<-st_join(PU_opensemi, vm_forest, largest=T)
+# update
+PU_opensemi2[!is.na(PU_opensemi2$fid),]$prmryFn<-as.character(PU_opensemi2[!is.na(PU_opensemi2$fid),]$featureDescription)
+PU_opensemi2[!is.na(PU_opensemi2$fid),]$prmryFr<-'Woodland'
+PU_opensemi2<-PU_opensemi2%>%select(prmryFn, prmryFr)
+
+allPU2<-rbind(PU_else, PU_opensemi2)
+#update prmryFn of woodland in greenspace area
+forest_update<-allPU2%>%filter(prmryFr=='Woodland' &
+         !prmryFn %in% c('Broad-leafed Woodland','Coniferous Woodland',
+          'Mixed Woodland', 'Orchard','Broad-leafed Woodland And Shrub',
+          'Coniferous Woodland And Shrub', 'Mixed Woodland And Shrub'))
+
+
+forest_update<-st_join(forest_update, vm_forest, largest=T)
+forest_update$featureDescription<-as.character(forest_update$featureDescription)
+# set nas (only occur in greenspace)
+forest_update[is.na(forest_update$featureDescription),]$featureDescription<-'Broad-leafed Woodland And Shrub'
+
+allPU2[allPU2$prmryFr=='Woodland' & !is.na(allPU2$prmryFr) &
+         !allPU2$prmryFn %in% c('Broad-leafed Woodland','Coniferous Woodland',
+   'Mixed Woodland', 'Orchard','Broad-leafed Woodland And Shrub',
+   'Coniferous Woodland And Shrub', 'Mixed Woodland And Shrub'),]$prmryFn<-forest_update$featureDescription
+
+#st_write(allPU2,'C:/trees/temp/greenspace_vectormap_crops_PU_update.shp')
+st_write(allPU2,'C:/trees/modelling/full/greenspace_vectormap_crops_PU.shp', delete_dsn=T)
+
 #### Create neighbourhood matrix for PUs
 # PUs within 10m of each other and not bisected by a major road are 
 # said to be neighbours
