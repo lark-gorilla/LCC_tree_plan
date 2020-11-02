@@ -21,10 +21,13 @@ library(leaflet)
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
 names(pu_all)[names(pu_all)=='X2050__']<-'yield'
 # read in data for connectivity matrix
-pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')# read manually edited file
+pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_updated.shp')# read manually edited file
 cm<-connected_matrix(as(pubuff_road, 'Spatial'))
 # make cost * area layer
 pu_all$cost2<-pu_all$car_pot*pu_all$cost
+# same for deprivation indices
+pu_all$mst30dp<-pu_all$car_pot*pu_all$mst30dp
+pu_all$md30t60<-pu_all$car_pot*pu_all$md30t60
 ```
 
 ### Landcover -> Planning unit cost layer
@@ -77,26 +80,26 @@ plot(pu_all['flood'],border=NA, main='Priority flood planting')
 ```{r}
 p1<-problem(as(pu_all, 'Spatial'), features=c('car_pot', 'yield','mst30dp', "md30t60", 'flood'),cost_column='cost2')
 ```
-There is 365115467 m2 (~365 km2) area available for tree planting 
+Our planning units cover 362609999 m2 (~362 km2)  
 
 ```{r}
 sum(pu_all$car_pot)
 ```
-But 49490374 m2 (~49 km2) is already covered by trees, so the remaining area we could plant is 315625093 m2 (~315 km2). Any target area of planting needs to be above 49 km2, otherwise we're not planting new trees.
+But 68084591 (~68 km2) of these planning uits represent existing tree cover, so the maximum remaining area we could plant is 294525408 m2 (~294 km2). Any target area of planting needs to be above 68 km2, otherwise we're not planting new trees.
 ```{r}
-sum(pu_all$car_pot)
+sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T)
 sum(pu_all$car_pot)-sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T)
 ```
-The total yield covering all 88031 planning units is 758839, set the target to the number of planning units.
+The total yield covering all 88031 planning units is 758839.
 ```{r}
 sum(pu_all$yield)
 nrow(pu_all)
 ```
-We can have a max target of 39444 Planning Units that have high deprivation.
+We can have a max target of 60417330 m2 (~60 km2) of areas with high deprivation.
 ```{r}
 sum(pu_all$mst30dp, na.rm=T)
 ```
-We can have a max target of 20635 Planning Units that have intermediate deprivation.
+We can have a max target of 94400206 m2 (~94 km2) of areas with intermediate deprivation.
 ```{r}
 sum(pu_all$md30t60, na.rm=T)
 ```
@@ -106,13 +109,21 @@ sum(pu_all$flood, na.rm=T)
 ```
 
 
-OK so set prelimary targets to double current tree cover (basically 100km2) in the highest yielding areas, include 50% of high deprivation planning units, 50% of intermediate deprivation planning units, 50% of priority flood mitigation areas.
+Design a tree planting network with targets that:
+
+double current tree cover (~ 140 km2);
+include 50% of the total available yield;
+include 50% of highly deprived areas (~30 km2);
+include 25% of intermediate deprived areas (~23 km2);
+include 50% of priority flood mitigation areas (~25 km2).
+
 ```{r}
-targets<-c(100000000, 88031, 19722,10317, 25609198)
+targets<-c(140000000, 379419, 30208665,23600052, 25609198)
 ```
 
 ### Run prioritizr
-We have 'locked in' all planning units already covered in trees so they will form the basis of the network. We add neighbourhood constraints so that each selected planning unit in the network must be connected to at least one other planning unit. 
+
+The optimal tree planting network will meet the above targets while minimising the cost of converting exisitng landcover into forest. To include biodiversity connectivity in the network we specify that each planning unit selected for tree planting must be connected (within 10m and not crossed by a major raod) to at least one other selected planning. Additionally, all planning units that represent existing tree cover are 'locked in' so that they will form the basis of the connected planting network.
 
 ```{r}
 p2<-p1%>%add_min_set_objective() %>%   
@@ -135,20 +146,21 @@ plot(pu_all['initial.run'], border=NA, pal=c('lavender','black'),main='Initial p
 
 ### adjust feature target parameters and observe solution change 
 
-Tree planting area target remains constant (100km2)
-Yield class either: 88031 (initial), 176062(double) or 379419 (50% max val)
-High deprivation either: 9861 (25%), 19722 (50% inital) or 29583 (75%)
-Intermediate deprivation either: 5158 (25%), 10317 (50% inital) or 15476 (75%)
+Tree planting area target remains constant (140km2)
+Yield class either: 189709 (25%), 379419(50% initial) or 569129 (75%)
+High deprivation either: 15104333 (25%), 30208665 (50% inital) or 45312998 (75%)
+Intermediate deprivation either: 23600052 (25% Initial), 47200103 (50%) or 70800155 (75%)
 Piority flood mitigation either: 12804599 (25%), 25609198 (50% inital) or 38413797 (75%)
+
 
 ## Note: solutions do differ in the total number of planning units used to meet their targets, but all targets are met in each solution
 
 ```{r, echo=F, message=FALSE, warning=FALSE, include=F}
 
-targets2<-rbind(data.frame(car_pot=100000000, yield=c(88031, 176062 ,379419), mst30dp=19722, md30t60=10317, flood= 25609198, name='Yield', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=100000000, yield=88031, mst30dp=c(9861, 19722, 29583), md30t60=10317, flood= 25609198, name='High Depr', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=100000000, yield=88031, mst30dp=19722, md30t60=c(5158, 10317, 15476), flood= 25609198, name='Intermediate Depr', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=100000000, yield=88031, mst30dp=19722, md30t60=10317, flood= c(12804599, 25609198, 38413797), name='Flood mitigaton', lev=c('low', 'med', 'high')))
+targets2<-rbind(data.frame(car_pot=140000000, yield=c(189709, 379419 ,569129), mst30dp=30208665, md30t60=23600052, flood= 25609198, name='Yield', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=140000000, yield=379419, mst30dp=c(15104333, 30208665, 45312998), md30t60=23600052, flood= 25609198, name='High Depr', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=140000000, yield=379419, mst30dp=30208665, md30t60=c(23600052, 47200103, 70800155), flood= 25609198, name='Intermediate Depr', lev=c('low', 'med', 'high')),
+        data.frame(car_pot=140000000, yield=379419, mst30dp=30208665, md30t60=23600052, flood= c(12804599, 25609198, 38413797), name='Flood mitigaton', lev=c('low', 'med', 'high')))
  
 for (i in 1:nrow(targets2)){
   p3<-p1%>%add_min_set_objective() %>%   
