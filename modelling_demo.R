@@ -59,7 +59,7 @@ cellStats(sim_pu_raster * s1, "sum")# if raster
 # calculate how well features are represented in the solution
 feature_representation(p2, s1)
 #### end demo ####
-
+ 
 #### Real data ####
 
 #read Planning units
@@ -152,32 +152,27 @@ gs$area<-NULL
 # write gs layer
 write_sf(gs, 'C:/trees/modelling/demo/final_PU_attrib.shp', delete_dsn=T)
 
-# reproject to wgs for leaflet
-pu_all<-st_read('C:/trees/modelling/demo/final_PU_attrib.shp')
-library(rgdal)
-library(gdalUtils)
-src_datasource_name <- 'C:/trees/modelling/demo/final_PU_attrib.shp'
-dst_datasource_name <- 'C:/trees/modelling/demo/final_PU_attrib_wgs.shp'
-
-ogr2ogr(src_datasource_name,dst_datasource_name,
-        s_srs="+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs +nadgrids=C:/trees/spatial_data_downloads/OSTN02_NTv2.gsb",
-        t_srs="EPSG:4326",verbose=TRUE)
 
 # prioritizR run
 pu_all<-read_sf('C:/trees/modelling/demo/final_PU_attrib.shp')
 names(pu_all)[names(pu_all)=='X2050__']<-'yield'
 #neighbourhood constraint matrix (within 10m and not crossed by main road)
-pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')# read manually edited file
+pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_updated.shp')# read manually edited file
 cm<-connected_matrix(as(pubuff_road, 'Spatial'))
 pu_all$cost2<-pu_all$car_pot*pu_all$cost
+# make both deprovation indices areas based
+pu_all$mst30dp<-pu_all$car_pot*pu_all$mst30dp
+pu_all$md30t60<-pu_all$car_pot*pu_all$md30t60
 
 p1<-problem(as(pu_all, 'Spatial'), 
             features=c('car_pot', 'yield','mst30dp', "md30t60", 'flood'),
             cost_column='cost2')
 #targets for each layer
+sum(pu_all[pu_all$cost==0,]$car_pot, na.rm=T)# new existing tree cover=68km2
+# so crank target to 140km2
 
-
-targets<-c(100000000, 88031, 19722,10317, 25609198)
+# All targets apart from yield now run on area.All at +/- 50%, apart from med deprivation @ 25% 
+targets<-c(140000000, 379419, 30208665,23600052, 25609198)
 
 p2<-p1%>%add_min_set_objective() %>%   
   add_absolute_targets(targets)%>%
@@ -189,8 +184,7 @@ s1<-solve(p2)
 
 pu_all$sol<-s1$solution_1
 
-
-write_sf(pu_all, 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp')
+write_sf(pu_all, 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp', delete_dsn=T)
 
 # convert to wgs for leaflet
 library(rgdal)
