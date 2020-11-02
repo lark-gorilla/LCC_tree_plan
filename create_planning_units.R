@@ -108,7 +108,7 @@ for(i in 1:length(va_files))
                      va_files[i]), layer='RoadCline', quiet=T)
   g1%>%dplyr::select(gml_id, featureDescription)->g1
   
-  # filter out unwanted lines
+  # filter out unwanted lines ALSO run without filter to get all roads!
   g1<-g1%>%filter(featureDescription %in% c('A Road, Alignment', 'A Road, Primary, Alignment',
                   'Minor Road, Alignment', 'B Road, Alignment', 'Motorway, Alignment'))
   
@@ -125,6 +125,7 @@ for(i in 1:length(va_files))
 }
 
 st_write(va_lyr, 'C:/trees/spatial_data/vectormap_local/vectormap_majorRoads_mosaic_ward.gml')
+st_write(va_lyr, 'C:/trees/spatial_data/vectormap_local/vectormap_allRoads_mosaic_ward.gml')
 
 
 # clip out area of greenspace coverage inside vectormap_local mosaics
@@ -251,6 +252,7 @@ allPU2[allPU2$prmryFr=='Woodland' & !is.na(allPU2$prmryFr) &
 #st_write(allPU2,'C:/trees/temp/greenspace_vectormap_crops_PU_update.shp')
 st_write(allPU2,'C:/trees/modelling/full/greenspace_vectormap_crops_PU.shp', delete_dsn=T)
 
+
 #### Create neighbourhood matrix for PUs
 # PUs within 10m of each other and not bisected by a major road are 
 # said to be neighbours
@@ -262,15 +264,34 @@ roadz<-st_read('C:/trees/spatial_data/vectormap_local/vectormap_majorRoads_mosai
 st_crs(roadz)<-st_crs(pubuff)
 pubuff_road<-st_difference(pubuff, st_union(st_buffer(roadz, 3)))# buffer roads by 3 m
 write_sf(pubuff_road, 'C:/trees/modelling/demo/PU_10mbuff_roads.shp', delete_dsn=T)
-pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp')
+pubuff_road<-st_read('C:/trees/modelling/demo/PU_10mbuff_roads.shp')
 #inty<-st_intersects(pubuff_road, sparse=F)
 cm<-connected_matrix(as(pubuff_road, 'Spatial'))
 #bm<-boundary_matrix(as(pubuff_road, 'Spatial'), TRUE)
 # run with this cm reveals 661 Forested PUs that are not connected (road or > 10m)
 pubuff_road$NOconn_tree<-0
 # get the unconnected tree areas from matrix
-c1<-cm[which(pu_all$cost==0),]
-pubuff_road[which(pu_all$cost==0)[which(rowSums(c1)==0)],]$NOconn_tree<-1
+c1<-cm[which(allPU$cost==0),]
+pubuff_road[which(allPU$cost==0)[which(rowSums(c1)==0)],]$NOconn_tree<-1
 pubuff_road1<-pubuff_road%>%st_buffer(dist=pubuff_road$NOconn_tree*35)
-write_sf(pubuff_road1, 'C:/trees/modelling/demo/PU_10mbuff_roads_temp.shp', delete_dsn=T)
-# edit manually those tree PUs that need greater thah 35km buffer to intersect
+
+# repeat with 35km buffer to see how many we now have
+pubuff_road1$NOconn_tree<-0
+cm2<-connected_matrix(as(pubuff_road1, 'Spatial'))
+c2<-cm2[which(allPU$cost==0),]
+pubuff_road1[which(allPU$cost==0)[which(rowSums(c2)==0)],]$NOconn_tree<-1
+# 19 wooded unconnected PUs left, crank bufdist up to 70m
+pubuff_road2<-pubuff_road1%>%st_buffer(dist=pubuff_road1$NOconn_tree*70)
+pubuff_road2$NOconn_tree<-0
+cm3<-connected_matrix(as(pubuff_road2, 'Spatial'))
+c3<-cm3[which(allPU$cost==0),]
+pubuff_road2[which(allPU$cost==0)[which(rowSums(c3)==0)],]$NOconn_tree<-1
+# 9 wooded unconnected PUs left, crank bufdist up to 100m
+pubuff_road3<-pubuff_road2%>%st_buffer(dist=pubuff_road2$NOconn_tree*100)
+pubuff_road3$NOconn_tree<-0
+cm4<-connected_matrix(as(pubuff_road3, 'Spatial'))
+c4<-cm4[which(allPU$cost==0),]
+pubuff_road3[which(allPU$cost==0)[which(rowSums(c4)==0)],]$NOconn_tree<-1
+
+write_sf(pubuff_road3, 'C:/trees/modelling/demo/PU_10mbuff_roads_updated.shp', delete_dsn=T)
+
