@@ -1,11 +1,11 @@
 ---
-title: "LCC tree network mapper"
-author: "Mark Miller"
-date: "29 October 2020"
+title: "LCC tree network mapper (Morley demo)"
+author: "Mark Miller (m.miller@leeds.ac.uk)"
+date: "11 November 2020"
 output: html_document
 ---
 
-```{r, echo=FALSE, warning=F, message=F, fig.width=10, fig.height=8}
+```{r, echo=FALSE, warning=F, message=F, fig.width=10, fig.height=6}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(sf)
@@ -13,7 +13,9 @@ library(raster)
 library(leaflet)
 library(fasterize)
 pu_wgs<-read_sf('C:/trees/modelling/demo/leedswards_PU_attrib_solution1_wgs.shp')
-ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m acc
+#ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m # Morley demo extent
+ras_templ<-raster(extent(c(-1.6403,-1.5546,53.7065, 53.7804)), resolution=0.0001, crs=projection(pu_wgs))# approx 5m 
+
 r_cost<-fasterize(pu_wgs, ras_templ, field='cost2')
 pu_wgs$Fn_code<-as.numeric(as.factor(pu_wgs$prmryFn))
 r_lcov<-fasterize(pu_wgs, ras_templ, field='Fn_code')
@@ -28,8 +30,8 @@ r_sol<-fasterize(pu_wgs, ras_templ, field='sol')
 
 
 #color palettes
-pal_lcov<-colorFactor(rainbow(40),values(r_lcov), na.color='transparent')
-lcov_lookup<-pu_wgs%>%as.data.frame()%>%group_by(Fn_code)%>%summarise(lcov=first(prmryFn))
+pal_lcov<-colorFactor(rainbow(length(unique(values(r_lcov)))-1),values(r_lcov), na.color='transparent')
+lcov_lookup<-pu_wgs%>%as.data.frame()%>%group_by(Fn_code)%>%summarise(lcov=first(prmryFn))%>%filter(Fn_code%in%unique(values(r_lcov)))
 pal_cost<-colorBin("RdYlBu", values(r_cost), bins=10, na.color='transparent')
 pal_hdep<-colorBin("RdYlBu", values(r_dep30), bins=10, na.color='transparent')
 pal_mdep<-colorBin("RdYlBu", values(r_dep6030), bins=10, na.color='transparent')
