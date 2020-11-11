@@ -5,61 +5,6 @@ library(raster)
 library(prioritizr)
 library(ggplot2)
 
-
-#### DEMO ####
-#PU expl
-data(sim_pu_polygons)
-spplot(sim_pu_polygons, zcol = "cost")
-data(sim_features)
-
-# make our layers
-
-#CARBON BENEFIT ~70:100 Mg of C able to be sequestered. NA = non greenspace
-car_pot<-raster::subset(sim_features, 1)
-car_pot<-car_pot*100
-car_pot[values(car_pot)%in%sample(values(car_pot), 60)]<-NA #eliminate some as non greenspace
-
-# SOCIALBENEFIT val: 1= LOW, 2= HIGH
-soc_ben<-raster::subset(sim_features, 2)
-soc_ben<-raster::cut(soc_ben, breaks=c(0.2, 0.3, 0.4)) # 1= low, 2=high
-
-# EXISTING TREES val: 1= in PA, NA = not
-trees<-raster::subset(sim_features, 3)
-values(trees)<-1
-trees[sample(1:10, 20, replace=T), sample(1:10, 20, replace=T)]<-NA
-
-# HABITAT val: 1= in PA, NA = not
-hab_a<-raster::subset(sim_features, 3)
-values(hab_a)<-1
-hab_a[sample(1:10, 20, replace=T), sample(1:10, 20, replace=T)]<-NA
-
-
-p1<-problem(sim_pu_polygons, stack(car_pot, soc_ben, trees, hab_a),
-            cost_column='cost')
-#targets for each layer
-
-targets<-c(500, 20, 5, 5)
-
-p2<-p1%>%add_min_set_objective() %>%   
-  add_absolute_targets(targets) %>%
-  add_locked_in_constraints('locked_in') %>%
-  add_locked_out_constraints('locked_out')
-
-s1<-solve(p2)
-plot(s1)
-
-plot(s1, col = c("grey90", "darkgreen"), main = "Solution",
-     xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1))
-
-# calculate the number of selected planning units
-cellStats(s1, "sum") # if raster
-# calculate the cost of the solution
-cellStats(sim_pu_raster * s1, "sum")# if raster
-
-# calculate how well features are represented in the solution
-feature_representation(p2, s1)
-#### end demo ####
- 
 #### Real data ####
 
 #read Planning units
@@ -93,8 +38,18 @@ gs[gs$prmryFn %in% c('Public Park Or Garden','Land Use Changing',
 # low cost 
 gs[gs$prmryFr=='Woodland',]$cost<-0 # no cost for existing woods
 
-tab1<-gs%>%st_set_geometry(NULL)%>%group_by(prmryFn)%>%summarise(cost=first(cost))
-stargazer(tab1)
+gs%>%st_set_geometry(NULL)%>%group_by(prmryFn)%>%
+  summarise(cost=paste(unique(cost), collapse=','))%>%as.data.frame()
+
+
+# Update costby multiplying LCC land cost by 0.1
+LCC_land<-st_read('C:/trees/spatial_data/LCC_Own/LCC_Own_03_11_2020.shp')
+LCC_land<-na.omit(LCC_land)
+st_crs(LCC_land)<-27700 
+# buffer fulfils 2 purposes, to reduce LCC_land polys by 5m and to fix invalid err
+LCC_land<-st_buffer(LCC_land, -5)
+inty1<-st_intersects(gs, LCC_land)
+gs[which(lengths(inty1)>0),]$cost<-gs[which(lengths(inty1)>0),]$cost*0.1
 
 # IMD do IMD * PU area, make sense?
 imd<-st_read('C:/trees/spatial_data/IMD19/IMD_2019/IMD_2019.shp')
@@ -130,11 +85,12 @@ gs<-st_join(gs, flood, largest=T)
 # edit flood to area of flood
 gs$flood<-gs$flood*gs$area
 
+# sssi extract last so overrides other costs
 sssi<-read_sf('C:/Users/fbsmmi/OneDrive - University of Leeds/LCC_trees/spatial_data/sites_special_scientific_interest.geojson')
 #Join in SSSI data and attribute, then modify cost column
 # if SSSI=T & not woodland = cost=3
 sssi_int<-st_intersects(gs, sssi)
-gs[which(lengths(sssi_int)>1 & gs$prmryFr!='Woodland'),]$cost<-3
+gs[which(lengths(sssi_int)>0 & gs$prmryFr!='Woodland'),]$cost<-3
 
  # Make carbon potential layer (area)
 gs$car_pot<-gs$area
