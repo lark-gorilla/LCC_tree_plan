@@ -14,9 +14,12 @@ library(leaflet)
 library(fasterize)
 pu_wgs<-read_sf('C:/trees/modelling/demo/leedswards_PU_attrib_solution1_wgs.shp')
 #ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m # Morley demo extent
-ras_templ<-raster(extent(c(-1.6403,-1.5546,53.7065, 53.7804)), resolution=0.0001, crs=projection(pu_wgs))# approx 5m 
+ras_templ<-raster(extent(c(-1.6403,-1.5546,53.7065, 53.7804)), resolution=0.00005, crs=projection(pu_wgs))# approx 5m 
 
-r_cost<-fasterize(pu_wgs, ras_templ, field='cost2')
+# area m2 to ha
+pu_wgs$car_pot<-pu_wgs$car_pot/10000
+
+r_cost<-fasterize(pu_wgs, ras_templ, field='cost')
 pu_wgs$Fn_code<-as.numeric(as.factor(pu_wgs$prmryFn))
 r_lcov<-fasterize(pu_wgs, ras_templ, field='Fn_code')
 r_dep30<-fasterize(pu_wgs, ras_templ, field='mst30dp')
@@ -32,10 +35,11 @@ r_sol<-fasterize(pu_wgs, ras_templ, field='sol')
 #color palettes
 pal_lcov<-colorFactor(rainbow(length(unique(values(r_lcov)))-1),values(r_lcov), na.color='transparent')
 lcov_lookup<-pu_wgs%>%as.data.frame()%>%group_by(Fn_code)%>%summarise(lcov=first(prmryFn))%>%filter(Fn_code%in%unique(values(r_lcov)))
-pal_cost<-colorBin("RdYlBu", values(r_cost), bins=10, na.color='transparent')
-pal_hdep<-colorBin("RdYlBu", values(r_dep30), bins=10, na.color='transparent')
-pal_mdep<-colorBin("RdYlBu", values(r_dep6030), bins=10, na.color='transparent')
-pal_flood<-colorBin("RdYlBu", values(r_flood), bins=10, na.color='transparent')
+
+pal_cost<-colorFactor(topo.colors(7), values(r_cost), na.color='transparent')
+#pal_hdep<-colorBin("RdYlBu", values(r_dep30), bins=10, na.color='transparent')
+#pal_mdep<-colorBin("RdYlBu", values(r_dep6030), bins=10, na.color='transparent')
+#pal_flood<-colorBin("RdYlBu", values(r_flood), bins=10, na.color='transparent')
 pal_carea<-colorBin("RdYlBu", values(r_carea), bins=10, na.color='transparent')
 pal_cyiel<-colorBin("RdYlBu", values(r_cyiel), bins=10, na.color='transparent')
 
@@ -44,9 +48,9 @@ pal_cyiel<-colorBin("RdYlBu", values(r_cyiel), bins=10, na.color='transparent')
    addRasterImage(r_lcov, colors=pal_lcov, opacity = 0.9, group='Landcover')%>%
   addRasterImage(r_cost, colors=pal_cost, opacity = 0.9, group='Cost')%>%
    addRasterImage(r_sol, opacity = 0.9, group='Solution', color=c('blue', 'green'))%>%
-    addRasterImage(r_dep30, opacity = 0.9, group='High deprivation', colors=pal_hdep)%>%
-   addRasterImage(r_dep6030, opacity = 0.9, group='Med deprivation', colors=pal_mdep)%>%
-   addRasterImage(r_flood, colors=pal_flood, opacity = 0.9, group='Flood priority')%>%
+    addRasterImage(r_dep30, opacity = 0.9, group='High deprivation', colors='darkmagenta')%>%
+   addRasterImage(r_dep6030, opacity = 0.9, group='Med deprivation', colors='maroon')%>%
+   addRasterImage(r_flood, colors='dodgerblue', opacity = 0.9, group='Flood priority')%>%
    addRasterImage(r_carea, colors=pal_carea, opacity = 0.9, group='Area to plant')%>%
    addRasterImage(r_cyiel, colors=pal_cyiel, opacity = 0.9, group='Carbon seq. yield')%>%
    
@@ -54,13 +58,13 @@ pal_cyiel<-colorBin("RdYlBu", values(r_cyiel), bins=10, na.color='transparent')
    addLegend(pal = pal_lcov, values = values(r_lcov),title = "Land Cover",
              labFormat  = labelFormat(transform = function(x) {
               lcov_lookup[lcov_lookup$Fn_code==x,]$lcov}),group = "Landcover", position = "bottomleft")%>%
-   addLegend(pal = pal_cost, values = values(r_cost), title= 'PU cost', group = "Cost", position = "bottomleft")%>%
+   addLegend(pal = pal_cost, values = values(r_cost), title= 'PU cost category', group = "Cost", position = "bottomleft")%>%
    addLegend(values=c(1,2), colors=c('blue', 'green'), title='Planting network', labels=c('new planting', 'existing trees'), group = "Solution", position = "bottomleft")%>%
-   addLegend(pal = pal_hdep, values = values(r_dep30), title='Most deprived 30%', group = "High deprivation", position = "bottomleft")%>%
-      addLegend(pal = pal_mdep, values = values(r_dep6030), title='Intermediate deprivation', group = "Med deprivation", position = "bottomleft")%>%
-    addLegend(pal = pal_carea, values = values(r_carea), title= 'Area available for planting', group = "Area to plant", position = "bottomleft")%>%
+   addLegend(colors='darkmagenta', labels='', title='Most deprived 30%', group = "High deprivation", position = "bottomleft")%>%
+      addLegend(colors='maroon', labels='', title='Intermediate deprivation', group = "Med deprivation", position = "bottomleft")%>%
+    addLegend(pal = pal_carea, values = values(r_carea), title= 'Area available for planting (ha)', group = "Area to plant", position = "bottomleft")%>%
        addLegend(pal = pal_cyiel, values = values(r_cyiel), title= 'Planting yield', group = "Carbon seq. yield", position = "bottomleft")%>%
-       addLegend(pal = pal_flood, values = values(r_flood), title= 'Priority flood planting', group = "Flood priority", position = "bottomleft")%>%
+       addLegend(colors='dodgerblue', labels='', title= 'Priority flood planting', group = "Flood priority", position = "bottomleft")%>%
    
    addLayersControl(overlayGroups = c('Landcover', "Cost",'High deprivation', 'Med deprivation', 'Flood priority', 'Area to plant', 'Carbon seq. yield', "Solution"),
                    options = layersControlOptions(collapsed = FALSE))
