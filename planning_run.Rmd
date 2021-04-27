@@ -35,6 +35,10 @@ pu_all$md30t60<-pu_all$car_pot*pu_all$md30t60
 Our planning units (PUs) cover Leeds City Council wards and have all non-green spaces areas (e.g. buildings, infrastructure etc) removed. The planning units represent plantable areas of land, each with associated costs for conversion from current land use to tree planting.  
 
 Planning unit landcover is theoretically available for planting and binned into 4 cost classes: existing tree cover = 0 (free); all others are 1,2 or 3 representing increasing difficulty/cost to plant on. 
+
+There are two modifiers to land cover cost:
+1) If a non-forested Planning Unit intersects with a SSSI then it is given the highest cost (3) so that we do not plant over sensitive habitat: compare the cost of landcovers 'Heathland And Unimproved Grass'
+2) *0.1 modifier to land cover for LCC ownership
 ```{r, echo=FALSE}
 
 tab1<-pu_all%>%st_set_geometry(NULL)%>%group_by(prmryFn)%>%summarise(cost=first(cost))
@@ -144,49 +148,24 @@ pu_all$initial.run<-s1$solution_1
 plot(pu_all['initial.run'], border=NA, pal=c('lavender','black'),main='Initial planning solution (black in network)')
 ```
 
-### adjust feature target parameters and observe solution change 
+### Carry out irreplaceability analyses
 
-Tree planting area target remains constant (140km2)
-Yield class either: 189709 (25%), 379419(50% initial) or 569129 (75%)
-High deprivation either: 15104333 (25%), 30208665 (50% inital) or 45312998 (75%)
-Intermediate deprivation either: 23600052 (25% Initial), 47200103 (50%) or 70800155 (75%)
-Piority flood mitigation either: 12804599 (25%), 25609198 (50% inital) or 38413797 (75%)
+Find all potential network configurations that are within 20% of the optimal solution then count how many times each planning unit is selected for inclusion in a network.
 
+Only six tree planting networks within 20% of the optimal solution. Planning units counted six times were selected in every network (e.g. existing tree cover), planning units with zero were not selected in any network.
 
-## Note: solutions do differ in the total number of planning units used to meet their targets, but all targets are met in each solution
+```{r, message=FALSE, warning=FALSE}
 
-```{r, echo=F, message=FALSE, warning=FALSE, include=F}
+# run portfolio of solutions to calculate selection frequency
+p_port<-p2%>%add_cuts_portfolio(10)%>%
+  add_default_solver(gap = 0.2, verbose = FALSE)
 
-targets2<-rbind(data.frame(car_pot=140000000, yield=c(189709, 379419 ,569129), mst30dp=30208665, md30t60=23600052, flood= 25609198, name='Yield', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=140000000, yield=379419, mst30dp=c(15104333, 30208665, 45312998), md30t60=23600052, flood= 25609198, name='High Depr', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=140000000, yield=379419, mst30dp=30208665, md30t60=c(23600052, 47200103, 70800155), flood= 25609198, name='Intermediate Depr', lev=c('low', 'med', 'high')),
-        data.frame(car_pot=140000000, yield=379419, mst30dp=30208665, md30t60=23600052, flood= c(12804599, 25609198, 38413797), name='Flood mitigaton', lev=c('low', 'med', 'high')))
- 
-for (i in 1:nrow(targets2)){
-  p3<-p1%>%add_min_set_objective() %>%   
-  add_absolute_targets(as.integer(paste(targets2[i,1:5])))%>%
-  add_neighbor_constraints(k=1, data=cm) %>%
-  add_locked_in_constraints(locked_in=pu_all$cost==0)
-  
-  s2<-solve(p3) 
- pu_all$tempsol<-s2$solution_1
- names(pu_all)[names(pu_all)=='tempsol']<-paste0('run.with.',targets2[i,7],'.',targets2[i,6])
- print(i)}             
-```
-```{r, echo=F}
+s_port<-solve(p_port) # only 6 solutions within optimality gap
 
-plot(pu_all[11], border=NA, pal=c('lavender','black'))
-plot(pu_all[12], border=NA, pal=c('lavender','black'))
-plot(pu_all[13], border=NA, pal=c('lavender','black'))
-plot(pu_all[13], border=NA, pal=c('lavender','black'))
-plot(pu_all[14], border=NA, pal=c('lavender','black'))
-plot(pu_all[15], border=NA, pal=c('lavender','black'))
-plot(pu_all[16], border=NA, pal=c('lavender','black'))
-plot(pu_all[17], border=NA, pal=c('lavender','black'))
-plot(pu_all[18], border=NA, pal=c('lavender','black'))
-plot(pu_all[19], border=NA, pal=c('lavender','black'))
-plot(pu_all[20], border=NA, pal=c('lavender','black'))
-plot(pu_all[21], border=NA, pal=c('lavender','black'))
-plot(pu_all[22], border=NA, pal=c('lavender','black'))
-plot(pu_all[23], border=NA, pal=c('lavender','black'))
+# find column numbers with the solutions
+solution_columns <- which(grepl("solution", names(s_port)))
+
+# calculate selection frequencies
+pu_all$sel_freq <- rowSums(as.matrix(s_port@data[, solution_columns]))
+plot(pu_all['sel_freq'], border=NA,main='Selection frequency of planning units in top 20% of planting network solutions')
 ```
