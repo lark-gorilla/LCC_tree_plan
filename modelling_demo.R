@@ -140,7 +140,39 @@ s1<-solve(p2)
 
 pu_all$sol<-s1$solution_1
 
-write_sf(pu_all, 'C:/trees/modelling/demo/leedswards_PU_attrib_solution1.shp', delete_dsn=T)
+# run portfolio of solutions to calculate selection frequency
+p_port<-p2%>%add_cuts_portfolio(10)%>%
+  add_default_solver(gap = 0.2, verbose = FALSE)
+
+s_port<-solve(p_port) # only 6 solutions within optimality gap
+
+# find column numbers with the solutions
+solution_columns <- which(grepl("solution", names(s_port)))
+
+# calculate selection frequencies
+pu_all$sel_freq <- rowSums(as.matrix(s_port@data[, solution_columns]))
+plot(pu_all['sel_freq'], border=NA)
+
+# create Null solution
+
+# Null solution that hits 140km2 of new planting for min cost 
+p1<-problem(as(pu_all, 'Spatial'), 
+            features=c('car_pot'),
+            cost_column='cost2')
+
+targets<-c(140000000)
+
+p2<-p1%>%add_min_set_objective() %>%   
+  add_absolute_targets(targets)%>%
+  add_locked_in_constraints(locked_in=pu_all$cost==0)
+presolve_check(p2)
+
+s1<-solve(p2) 
+
+pu_all$sol_null<-s1$solution_1
+
+write_sf(pu_all, 'C:/trees/modelling/demo/leedswards_PU_attrib_multisolution.shp', delete_dsn=T)
+
 
 # convert to wgs for leaflet
 library(rgdal)
