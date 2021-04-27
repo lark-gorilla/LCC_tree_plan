@@ -1,11 +1,11 @@
 ---
-title: "LCC tree network mapper (Morley demo)"
+title: "LCC tree network mapper"
 author: "Mark Miller (m.miller@leeds.ac.uk)"
-date: "11 November 2020"
+date: "16 November 2020"
 output: html_document
 ---
 
-```{r, echo=FALSE, warning=F, message=F, fig.width=10, fig.height=6}
+```{r, echo=FALSE, warning=F, message=F, fig.width=10, fig.height=8}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(sf)
@@ -13,8 +13,9 @@ library(raster)
 library(leaflet)
 library(fasterize)
 pu_wgs<-read_sf('C:/trees/modelling/demo/leedswards_PU_attrib_solution1_wgs.shp')
-#ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m # Morley demo extent
-ras_templ<-raster(extent(c(-1.6403,-1.5546,53.7065, 53.7804)), resolution=0.00005, crs=projection(pu_wgs))# approx 5m 
+ras_templ<-raster(extent(pu_wgs), resolution=0.0001, crs=projection(pu_wgs))# approx 5m  extent
+
+#ras_templ<-raster(extent(c(-1.6403,-1.5546,53.7065, 53.7804)), resolution=0.00005, crs=projection(pu_wgs))## Morley demo
 
 # area m2 to ha
 pu_wgs$car_pot<-pu_wgs$car_pot/10000
